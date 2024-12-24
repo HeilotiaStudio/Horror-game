@@ -7,45 +7,36 @@ public class CharController : MonoBehaviour {
     public float walkSpeed = 7.0f;
     public float sprintSpeed = 10.0f;
     public float crouchSpeed = 3.5f;
-    public float jumpHeight = 2.0f; // Height of the jump
+    public float jumpHeight = 2.0f; 
     public float sensitivity = 30.0f;
+    public float headBobAmount = 0.05f;  // Head bobbing amount
+    public float fallDamageThreshold = 10.0f; // Threshold for fall damage
+
     private float speed;
     CharacterController character;
     public GameObject cam;
     float moveFB, moveLR;
     float rotX, rotY;
-    public bool webGLRightClickRotation = true;
     private float gravity = -9.8f;
     private Vector3 velocity;
-    public float originalHeight = 2.0f;  // Default height
-    public Vector3 originalCenter = new Vector3(0, 1, 0);  // Default center
-    public float crouchHeight = 1.0f;  // Crouched height
-    public Vector3 crouchCenter = new Vector3(0, 0.5f, 0);  // Crouched center
-    public float ventHidingHeight = 1.0f; // Distance to move up when hiding in a vent
-    public float ventAscendSpeed = 0.5f; // Speed of ascending into the vent
-    private bool isInVent = false; // Track if player is in a vent
-    private bool isHidingInVent = false; // Track if player is hiding in a vent
+    private Vector3 originalCamPosition;
+    private float fallDistance; // Distance fallen before hitting ground
 
     void Start(){
         character = GetComponent<CharacterController>();
-
-        // Set initial values if not set in the inspector
-        originalHeight = character.height;
-        originalCenter = character.center;
+        originalCamPosition = cam.transform.localPosition; // Store original camera position for head bobbing
 
         if (Application.isEditor) {
-            webGLRightClickRotation = false;
-            sensitivity = sensitivity * 1.5f;
+            sensitivity *= 1.5f;
         }
     }
 
     void Update(){
-        if (isHidingInVent) {
-            // If player is hiding in the vent, only exit hiding if any movement key is pressed
-            if (Input.GetAxis("Horizontal") != 0 || Input.GetAxis("Vertical") != 0) {
-                ExitVentHiding();
-            }
-            return; // Skip the rest of the update logic while hiding
+        // Head bobbing when walking
+        if (character.isGrounded && (moveFB != 0 || moveLR != 0)) {
+            HeadBob();
+        } else {
+            ResetHeadBob();
         }
 
         // Determine speed based on sprinting or walking
@@ -55,7 +46,7 @@ public class CharController : MonoBehaviour {
             speed = walkSpeed;
         }
 
-        // Determine if crouching
+        // Handle crouching
         if (Input.GetKey(KeyCode.LeftControl)) {
             Crouch();
         } else {
@@ -71,19 +62,20 @@ public class CharController : MonoBehaviour {
         Vector3 movement = new Vector3(moveFB, 0, moveLR);
         movement = transform.rotation * movement;
 
-        // Handle jumping
+        // Handle jumping and fall damage
         if (character.isGrounded) {
+            if (fallDistance > fallDamageThreshold) {
+                ApplyFallDamage();
+            }
+            fallDistance = 0f; // Reset fall distance
+
             velocity.y = 0f; // Reset velocity when grounded
 
             if (Input.GetButtonDown("Jump")) {
-                if (isInVent) {
-                    // Hide in vent by moving up
-                    StartCoroutine(HideInVent());
-                } else {
-                    // Normal jump
-                    velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
-                }
+                velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
             }
+        } else {
+            fallDistance += Mathf.Abs(velocity.y) * Time.deltaTime; // Track falling distance
         }
 
         velocity.y += gravity * Time.deltaTime; // Apply gravity
@@ -98,48 +90,25 @@ public class CharController : MonoBehaviour {
     }
 
     void Crouch() {
-        character.height = crouchHeight;
-        character.center = crouchCenter;
+        character.height = 1.0f;
         speed = crouchSpeed;
     }
 
     void StandUp() {
-        character.height = originalHeight;
-        character.center = originalCenter;
+        character.height = 2.0f;
     }
 
-    // Vent hiding logic
-    IEnumerator HideInVent() {
-        Vector3 originalPosition = transform.position;
-        Vector3 targetPosition = originalPosition + new Vector3(0, ventHidingHeight, 0);
-
-        float elapsedTime = 0f;
-
-        while (elapsedTime < ventAscendSpeed) {
-            transform.position = Vector3.Lerp(originalPosition, targetPosition, (elapsedTime / ventAscendSpeed));
-            elapsedTime += Time.deltaTime;
-            yield return null;
-        }
-
-        transform.position = targetPosition;
-        isHidingInVent = true; // Stay hidden until player presses a movement key
+    void HeadBob() {
+        float bobOffset = Mathf.Sin(Time.time * walkSpeed) * headBobAmount;
+        cam.transform.localPosition = originalCamPosition + new Vector3(0, bobOffset, 0);
     }
 
-    // Exit hiding mode when a movement key is pressed
-    void ExitVentHiding() {
-        isHidingInVent = false;
+    void ResetHeadBob() {
+        cam.transform.localPosition = originalCamPosition;
     }
 
-    // Detect if player enters or exits a vent
-    void OnTriggerEnter(Collider other) {
-        if (other.CompareTag("Vent")) {
-            isInVent = true;
-        }
-    }
-
-    void OnTriggerExit(Collider other) {
-        if (other.CompareTag("Vent")) {
-            isInVent = false;
-        }
+    void ApplyFallDamage() {
+        Debug.Log("Fall damage applied!");
+        // Add your fall damage logic here (e.g., reducing health)
     }
 }
